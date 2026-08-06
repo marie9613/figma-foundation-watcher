@@ -1,16 +1,39 @@
 ---
 name: figma-foundation-watch
-description: Checks the FOUNDATIONS page of Marie's "F2F Web_Design System 2.0" Figma file for changes (colors, type styles, spacing, effects -- anything at the design-token/foundation level, not regular screen work) and posts a Slack alert (currently to a test channel/mention, see below, while this is being validated) when something changed. Use this skill whenever the user asks to "check the Figma foundations", "watch for design system token changes", "set up the Figma-to-Slack foundation notifier", wants to run/re-run the foundation check now, or asks about the automation living in the figma-foundation-watcher repo. Also consult it before setting up any recurring trigger/routine for this repo, since it documents the exact environment settings and connectors that automation depends on.
+description: Checks the "foundation" pages of Marie's "F2F Web_Design System 2.0" Figma file for changes (colors, type styles, spacing, effects -- anything at the design-token/foundation level, not regular screen work) and posts a Slack alert (currently to a test channel/mention, see below, while this is being validated) when something changed. Use this skill whenever the user asks to "check the Figma foundations", "watch for design system token changes", "set up the Figma-to-Slack foundation notifier", wants to run/re-run the foundation check now, or asks about the automation living in the figma-foundation-watcher repo. Also consult it before setting up any recurring trigger/routine for this repo, since it documents the exact environment settings and connectors that automation depends on.
 ---
 
 # Figma foundation watcher
 
-Watches one specific part of one specific Figma file -- the `◼︎ FOUNDATIONS`
-canvas (`node-id=5-54`) in `F2F Web_Design System 2.0`
-(`fileKey=4EZqcDA8pAD4CVfPR9f9Gh`) -- and posts to Slack whenever that canvas
-changes, tagging one specific person. It intentionally ignores changes
+Watches seven specific pages in `F2F Web_Design System 2.0`
+(`fileKey=4EZqcDA8pAD4CVfPR9f9Gh`) and posts to Slack whenever any of them
+change, tagging one specific person. It intentionally ignores changes
 anywhere else in the file: regular screen/component work should not spam
 this channel.
+
+**Important, non-obvious scoping detail:** the page named `◼︎ FOUNDATIONS`
+(`node-id=5:54` -- what the original Figma URL for this task pointed at)
+is **not** a content page. Figma has no real page nesting, so this file
+fakes a hierarchy using a `↳` prefix in page names: `◼︎ FOUNDATIONS` is a
+section-divider heading in the flat pages list, and it will *always* have
+zero children -- diffing it can never detect anything. The actual
+foundation content lives in the seven sibling pages directly under that
+heading:
+
+| Page          | Node ID       |
+|---------------|---------------|
+| ↳ Colors      | `37:2`        |
+| ↳ Typography  | `37:3`        |
+| ↳ Spatial     | `24109:2951`  |
+| ↳ Grids       | `30396:77272` |
+| ↳ Effects     | `24123:50`    |
+| ↳ Image       | `24243:6889`  |
+| ↳ Assets      | `24243:6892`  |
+
+Those seven are what `scripts/check_foundations.py` actually watches
+(`FIGMA_PAGE_IDS`). An eighth page, `Pictogram`, sits in the same visual
+position but without the `↳` prefix -- confirmed **out of scope** for now;
+revisit if that turns out to be wrong.
 
 **Currently pointed at a test target while this is being validated:**
 `#testchannel` (`C0BNJEN2W57`), tagging Lorenzo Paccagnini (`U09HH14A076`).
@@ -20,27 +43,36 @@ switch `SLACK_CHANNEL_ID` and `MENTION_SLACK_ID` in
 `scripts/check_foundations.py` (and the routine's env vars, if one exists
 by then) back to those two values to go live.
 
-## The two read paths, and why only one works unattended
+## Two read paths -- both actually work, for different reasons
 
-**The Figma MCP connector (`mcp__Figma__get_metadata` etc.) is not reliable
-for unattended checks.** Tested repeatedly, including after a fresh
-reconnect: `get_metadata` on this exact page (`fileKey=4EZqcDA8pAD4CVfPR9f9Gh`,
-`nodeId=5:54`) consistently returns an empty node with no children, and
-`get_variable_defs` errors with "you need to select a layer first." This
-connector appears to mirror a live, currently-open/selected Figma Desktop
-state rather than doing a stateless remote read -- so a scheduled run with
-nobody at the desktop app will see nothing and silently report "no
-changes," which is worse than not checking at all. Only use it
-interactively (Path B below), and only after confirming with the user that
-the page is actually open in their Figma Desktop app.
+Earlier drafts of this skill claimed the Figma MCP connector
+(`mcp__Figma__get_metadata` etc.) was unreliable for unattended use,
+because it kept returning an empty node for `node-id=5:54`. That diagnosis
+was **wrong**: the connector was reporting the truth -- that page really
+does have zero children -- and the empty result had nothing to do with a
+live desktop session. Confirmed by calling `get_metadata` on `37:2`
+(`↳ Colors`) instead: it returned a full, deep, real node tree with no
+issue. So the MCP connector is in fact a reliable, stateless reader; the
+original bug was watching the wrong node. (`get_variable_defs` is a
+separate tool with its own "select a layer first" requirement -- this
+skill doesn't use it.)
 
-**The Figma REST API (`scripts/check_foundations.py`, Path A) is
-stateless and does work** -- it's a plain HTTPS call with a personal access
-token, independent of anyone's desktop app. The catch: this repo's cloud
-sessions/routines run behind a network policy that blocks arbitrary
-outbound HTTPS by default, so `api.figma.com` returns a `403` from the
-egress proxy until it's explicitly allowlisted (see setup below). This is
-a one-time environment setting, not a per-run problem.
+**Path A (`scripts/check_foundations.py`) is what's actually wired up.**
+It's a plain Figma REST API call with a personal access token, run as a
+script rather than through the MCP connector, because it produces clean
+JSON that's easy to diff -- no XML-parsing needed. It's been run for real
+against the seven pages above: first run saved a baseline of 8194 nodes,
+and an immediate second run correctly reported no changes.
+
+One environment-specific catch: this repo's cloud sessions/routines run
+behind a network policy that blocks arbitrary outbound HTTPS by default,
+so `api.figma.com` returns a `403` from the egress proxy until it's
+explicitly allowlisted (see setup below). This has already been fixed once
+for the current environment; a *new* environment or routine needs the same
+one-time change.
+
+**Path B (interactive, via the MCP connector) also works**, and is simpler
+when a human is present -- see below.
 
 ## Path A: scripted check (the one to automate)
 
@@ -49,7 +81,7 @@ FIGMA_TOKEN=<token> python3 .claude/skills/figma-foundation-watch/scripts/check_
 ```
 
 It:
-1. Fetches the FOUNDATIONS subtree from the Figma REST API.
+1. Fetches all seven foundation pages from the Figma REST API in one call.
 2. Fingerprints every node on semantically meaningful properties (fills,
    strokes, effects, text style/characters, corner radius) -- deliberately
    *not* position or size, so nudging a frame doesn't count as a change.
@@ -87,7 +119,9 @@ It:
   "File content: read-only" scope, from figma.com → Settings → Security →
   Personal access tokens). Do **not** add `SLACK_BOT_TOKEN` -- posting goes
   through the Slack connector instead (see above), and that connector
-  already works with any network access level.
+  already works with any network access level. Note: network access
+  changes only take effect for *new* sessions started after saving, not
+  ones already running.
 - **Connectors**: make sure Slack is included (Figma isn't needed for this
   path, since the script bypasses the MCP connector entirely).
 - **Trigger**: Schedule, whatever cadence makes sense (foundation tokens
@@ -108,21 +142,21 @@ It:
   the test channel/mention (see above). Come back and confirm the real
   target is switched in before turning on a recurring schedule.
 
-## Path B: interactive check (manual only, needs a live Figma Desktop session)
+## Path B: interactive check (using the Figma MCP connector directly)
 
-Only use this when someone is actively available to open the page first:
+A valid alternative when working live in a session, no Figma token needed:
 
-1. Ask the user to open the `◼︎ FOUNDATIONS` page in Figma Desktop (this
-   file: `fileKey=4EZqcDA8pAD4CVfPR9f9Gh`, `node-id=5:54`).
-2. Call `mcp__Figma__get_metadata` with that fileKey/nodeId. If it's still
-   an empty node, the page isn't actually loaded/visible in the app --
-   don't proceed as if that means "no changes."
-3. Summarize the visible structure and compare it against
-   `state/foundations-snapshot.json` from the last Path A run.
-4. If something changed, use `mcp__Slack__slack_send_message` with the
+1. Call `mcp__Figma__get_metadata` once per page in the table above
+   (`fileKey=4EZqcDA8pAD4CVfPR9f9Gh`, `nodeId=` one of the seven IDs). It
+   returns a full XML node tree per page -- this is confirmed to work
+   without any live desktop session.
+2. Summarize the visible structure per page and compare against
+   `state/foundations-snapshot.json` from the last Path A run (same node
+   IDs, so they're directly comparable).
+3. If something changed, use `mcp__Slack__slack_send_message` with the
    channel and mention currently configured (see the test-target note at
    the top of this file).
-5. Update `state/foundations-snapshot.json` by hand and commit it, so Path A
+4. Update `state/foundations-snapshot.json` by hand and commit it, so Path A
    runs later stay in sync.
 
 ## Tagging the right person
@@ -141,9 +175,23 @@ email -- don't rely on it, use the channel member list instead.
 test values above. When posting by hand via the Slack MCP tool, mention
 whichever ID matches the channel you're actually posting to.
 
+### Known Slack limitation: externally-shared channels
+
+`#testchannel` (`C0BNJEN2W57`) is a Slack Connect (externally-shared)
+channel. Slack blocks apps/bots from posting there directly --
+`mcp__Slack__slack_send_message` fails with
+`mcp_externally_shared_channel_restricted`. Use
+`mcp__Slack__slack_send_message_draft` instead to create a draft for a
+human to review and send; this is a Slack-side restriction, not fixable
+from our side. **Before relying on automated posting to the real target,
+confirm `#sed-design` is not also externally shared** -- if it is, the
+same restriction applies there and automated posting won't work at all
+(only drafts), which changes the design.
+
 ## Reporting results
 
-Always say plainly whether a Slack message was actually sent, whether it's
-going to the test channel or the real one, and whether it actually
-mentioned someone with a real `<@ID>` or just wrote inert text -- don't
-imply a ping happened if it didn't.
+Always say plainly whether a Slack message was actually sent (or only
+drafted, per the limitation above), whether it's going to the test channel
+or the real one, and whether it actually mentioned someone with a real
+`<@ID>` or just wrote inert text -- don't imply a ping happened if it
+didn't.

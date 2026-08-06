@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
 """
-Fetches the FOUNDATIONS page of the F2F Web Design System Figma file via the
-Figma REST API, fingerprints every node's semantically-relevant properties
-(name, type, fills, strokes, text style/characters, effects -- deliberately
-NOT position/size, since layout jitter isn't a "foundation change"), diffs
-that fingerprint against the last committed snapshot, and if anything
-changed, posts a summary to Slack.
+Fetches the "foundation" pages of the F2F Web Design System Figma file via
+the Figma REST API, fingerprints every node's semantically-relevant
+properties (name, type, fills, strokes, text style/characters, effects --
+deliberately NOT position/size, since layout jitter isn't a "foundation
+change"), diffs that fingerprint against the last committed snapshot, and if
+anything changed, posts a summary to Slack.
+
+Note on scope: "◼︎ FOUNDATIONS" (node 5:54) is NOT a content page -- it's a
+section-divider heading in Figma's flat pages list. Figma has no real page
+nesting, so this design system fakes a hierarchy with a "↳" naming
+convention: the seven pages actually named "↳ Colors", "↳ Typography", etc.
+are the real content, and 5:54 itself will always have zero children.
+FIGMA_PAGE_IDS below points at those seven pages directly. (An eighth
+page, "Pictogram", sits in the same visual position but without the "↳"
+prefix -- confirmed out of scope for now.)
 
 This is the headless / unattended path: it talks to the Figma and Slack REST
-APIs directly with tokens, so it works from a cron job with no Figma desktop
-app or live MCP session involved. See ../SKILL.md for the interactive
-fallback (using the Figma/Slack MCP tools) when tokens aren't configured.
+APIs directly with tokens, so it works from a cron job with no live MCP
+session involved. See ../SKILL.md for the interactive fallback (using the
+Figma/Slack MCP tools) when tokens aren't configured.
 
 Required environment variables:
   FIGMA_TOKEN      Figma personal access token, "File content" read scope.
@@ -19,7 +28,8 @@ Required environment variables:
 
 Optional environment variables:
   FIGMA_FILE_KEY   Defaults to the F2F Web Design System 2.0 file.
-  FIGMA_NODE_ID    Defaults to "5:54" (the FOUNDATIONS canvas).
+  FIGMA_PAGE_IDS   Comma-separated node IDs to watch. Defaults to the seven
+                   foundation pages (see above).
   SLACK_CHANNEL_ID Which channel to post to (see the TEST CONFIG note below).
   MENTION_SLACK_ID Slack user ID to @-mention on a detected change (see the
                    TEST CONFIG note below).
@@ -33,7 +43,15 @@ import urllib.request
 import urllib.error
 
 FIGMA_FILE_KEY = os.environ.get("FIGMA_FILE_KEY", "4EZqcDA8pAD4CVfPR9f9Gh")
-FIGMA_NODE_ID = os.environ.get("FIGMA_NODE_ID", "5:54")
+# ↳ Colors, ↳ Typography, ↳ Spatial, ↳ Grids, ↳ Effects, ↳ Image, ↳ Assets.
+FIGMA_PAGE_IDS = [
+    p.strip()
+    for p in os.environ.get(
+        "FIGMA_PAGE_IDS",
+        "37:2,37:3,24109:2951,30396:77272,24123:50,24243:6889,24243:6892",
+    ).split(",")
+    if p.strip()
+]
 
 # --- TEST CONFIG ---
 # Pointed at #testchannel / Lorenzo while this is being validated, instead of
@@ -90,14 +108,15 @@ def walk(node, path_names, out):
 
 
 def fetch_snapshot():
-    data = figma_get(f"/files/{FIGMA_FILE_KEY}/nodes?ids={FIGMA_NODE_ID}")
-    node_wrapper = data.get("nodes", {}).get(FIGMA_NODE_ID.replace("-", ":"))
-    if not node_wrapper:
-        node_wrapper = data.get("nodes", {}).get(FIGMA_NODE_ID)
-    if not node_wrapper or "document" not in node_wrapper:
-        die(f"Node {FIGMA_NODE_ID} not found in file {FIGMA_FILE_KEY} response.")
+    ids_param = ",".join(FIGMA_PAGE_IDS)
+    data = figma_get(f"/files/{FIGMA_FILE_KEY}/nodes?ids={ids_param}")
+    returned = data.get("nodes", {})
     out = {}
-    walk(node_wrapper["document"], [], out)
+    for page_id in FIGMA_PAGE_IDS:
+        node_wrapper = returned.get(page_id)
+        if not node_wrapper or "document" not in node_wrapper:
+            die(f"Page {page_id} not found in file {FIGMA_FILE_KEY} response.")
+        walk(node_wrapper["document"], [], out)
     return out
 
 
@@ -146,7 +165,7 @@ def build_slack_message(added, removed, modified):
         lines.append(f"…and {overflow} more.")
     lines.append("")
     lines.append(
-        "<https://www.figma.com/design/4EZqcDA8pAD4CVfPR9f9Gh/?node-id=5-54|Open the FOUNDATIONS page>"
+        "<https://www.figma.com/design/4EZqcDA8pAD4CVfPR9f9Gh/|Open the F2F Web Design System 2.0 file>"
     )
     return "\n".join(lines)
 
