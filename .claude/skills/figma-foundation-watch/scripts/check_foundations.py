@@ -20,9 +20,9 @@ Required environment variables:
 Optional environment variables:
   FIGMA_FILE_KEY   Defaults to the F2F Web Design System 2.0 file.
   FIGMA_NODE_ID    Defaults to "5:54" (the FOUNDATIONS canvas).
-  SLACK_CHANNEL_ID Defaults to C0173PTNZTR (#sed-design).
-  TERESA_SLACK_ID  Slack user ID for teresa.romero@globant.com. Leave unset
-                   until she's a member of the workspace -- see SKILL.md.
+  SLACK_CHANNEL_ID Which channel to post to (see the TEST CONFIG note below).
+  MENTION_SLACK_ID Slack user ID to @-mention on a detected change (see the
+                   TEST CONFIG note below).
 """
 import hashlib
 import json
@@ -34,11 +34,16 @@ import urllib.error
 
 FIGMA_FILE_KEY = os.environ.get("FIGMA_FILE_KEY", "4EZqcDA8pAD4CVfPR9f9Gh")
 FIGMA_NODE_ID = os.environ.get("FIGMA_NODE_ID", "5:54")
-SLACK_CHANNEL_ID = os.environ.get("SLACK_CHANNEL_ID", "C0173PTNZTR")
-# @teresa.romero.globant / "Teresa Romero García" -- confirmed member of
-# #sed-design. Override with the TERESA_SLACK_ID env var if this ever changes.
-TERESA_SLACK_ID = os.environ.get("TERESA_SLACK_ID", "U015EH28ZMG").strip()
-TERESA_FALLBACK_MENTION = "teresa.romero@globant.com"
+
+# --- TEST CONFIG ---
+# Pointed at #testchannel / Lorenzo while this is being validated, instead of
+# the real target (#sed-design, C0173PTNZTR / Teresa Romero, U015EH28ZMG).
+# Switch SLACK_CHANNEL_ID and MENTION_SLACK_ID back to those once this has
+# been confirmed working end to end.
+SLACK_CHANNEL_ID = os.environ.get("SLACK_CHANNEL_ID", "C0BNJEN2W57")
+# @l.paccagnini.fl / "Lorenzo Paccagnini", confirmed member of #testchannel.
+MENTION_SLACK_ID = os.environ.get("MENTION_SLACK_ID", "U09HH14A076").strip()
+MENTION_FALLBACK_TEXT = "Lorenzo Paccagnini"
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_PATH = os.path.join(SCRIPT_DIR, "..", "state", "foundations-snapshot.json")
@@ -123,7 +128,7 @@ def diff_snapshots(old, new):
 
 
 def build_slack_message(added, removed, modified):
-    mention = f"<@{TERESA_SLACK_ID}>" if TERESA_SLACK_ID else TERESA_FALLBACK_MENTION
+    mention = f"<@{MENTION_SLACK_ID}>" if MENTION_SLACK_ID else MENTION_FALLBACK_TEXT
     lines = [
         f":rotating_light: *Foundation change detected* in the F2F Web Design System 2.0 Figma file "
         f"({len(added)} added, {len(removed)} removed, {len(modified)} modified)",

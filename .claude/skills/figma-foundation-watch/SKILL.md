@@ -1,16 +1,24 @@
 ---
 name: figma-foundation-watch
-description: Checks the FOUNDATIONS page of Marie's "F2F Web_Design System 2.0" Figma file for changes (colors, type styles, spacing, effects -- anything at the design-token/foundation level, not regular screen work) and posts a Slack alert to #sed-design tagging Teresa Romero when something changed. Use this skill whenever the user asks to "check the Figma foundations", "watch for design system token changes", "set up the Figma-to-Slack foundation notifier", wants to run/re-run the foundation check now, or asks about the automation living in the figma-foundation-watcher repo. Also consult it before setting up any recurring trigger/routine for this repo, since it documents the exact environment settings and connectors that automation depends on.
+description: Checks the FOUNDATIONS page of Marie's "F2F Web_Design System 2.0" Figma file for changes (colors, type styles, spacing, effects -- anything at the design-token/foundation level, not regular screen work) and posts a Slack alert (currently to a test channel/mention, see below, while this is being validated) when something changed. Use this skill whenever the user asks to "check the Figma foundations", "watch for design system token changes", "set up the Figma-to-Slack foundation notifier", wants to run/re-run the foundation check now, or asks about the automation living in the figma-foundation-watcher repo. Also consult it before setting up any recurring trigger/routine for this repo, since it documents the exact environment settings and connectors that automation depends on.
 ---
 
 # Figma foundation watcher
 
 Watches one specific part of one specific Figma file -- the `◼︎ FOUNDATIONS`
 canvas (`node-id=5-54`) in `F2F Web_Design System 2.0`
-(`fileKey=4EZqcDA8pAD4CVfPR9f9Gh`) -- and posts to the `#sed-design` Slack
-channel (`C0173PTNZTR`) whenever that canvas changes, tagging Teresa Romero.
-It intentionally ignores changes anywhere else in the file: regular
-screen/component work should not spam this channel.
+(`fileKey=4EZqcDA8pAD4CVfPR9f9Gh`) -- and posts to Slack whenever that canvas
+changes, tagging one specific person. It intentionally ignores changes
+anywhere else in the file: regular screen/component work should not spam
+this channel.
+
+**Currently pointed at a test target while this is being validated:**
+`#testchannel` (`C0BNJEN2W57`), tagging Lorenzo Paccagnini (`U09HH14A076`).
+The real target, once this is confirmed working end to end, is
+`#sed-design` (`C0173PTNZTR`), tagging Teresa Romero (`U015EH28ZMG`) --
+switch `SLACK_CHANNEL_ID` and `MENTION_SLACK_ID` in
+`scripts/check_foundations.py` (and the routine's env vars, if one exists
+by then) back to those two values to go live.
 
 ## The two read paths, and why only one works unattended
 
@@ -54,9 +62,11 @@ It:
    - otherwise prints the composed Slack message prefixed with
      `FOUNDATION_CHANGE_DETECTED:` and does *not* post it itself -- the
      calling Claude Code session is expected to post that message with
-     `mcp__Slack__slack_send_message` (`channel_id=C0173PTNZTR`) instead.
-     This is the intended mode for a routine: no Slack token needed at all,
-     since MCP connector traffic isn't subject to the network allowlist.
+     `mcp__Slack__slack_send_message` (`channel_id` = whatever
+     `SLACK_CHANNEL_ID` is currently set to -- see the test-target note
+     above) instead. This is the intended mode for a routine: no Slack
+     token needed at all, since MCP connector traffic isn't subject to the
+     network allowlist.
 6. Whichever way it posts, always commit and push the updated
    `state/foundations-snapshot.json` afterward so the next run diffs
    against current state instead of re-detecting the same change.
@@ -88,10 +98,15 @@ It:
   > Run `python3 .claude/skills/figma-foundation-watch/scripts/check_foundations.py`
   > in `marie9613/figma-foundation-watcher`, with `FIGMA_TOKEN` from the
   > environment. If its output starts with `FOUNDATION_CHANGE_DETECTED:`,
-  > post the message between the `---` markers to Slack channel
-  > `C0173PTNZTR` using `mcp__Slack__slack_send_message`. Either way, commit
-  > and push any change to `state/foundations-snapshot.json`. State plainly
-  > in your summary whether anything changed and whether Slack was posted.
+  > post the message between the `---` markers to the Slack channel the
+  > script printed, using `mcp__Slack__slack_send_message`. Either way,
+  > commit and push any change to `state/foundations-snapshot.json`. State
+  > plainly in your summary whether anything changed and whether Slack was
+  > posted.
+
+  Don't set up this routine's schedule trigger yet -- it's still pointed at
+  the test channel/mention (see above). Come back and confirm the real
+  target is switched in before turning on a recurring schedule.
 
 ## Path B: interactive check (manual only, needs a live Figma Desktop session)
 
@@ -104,23 +119,31 @@ Only use this when someone is actively available to open the page first:
    don't proceed as if that means "no changes."
 3. Summarize the visible structure and compare it against
    `state/foundations-snapshot.json` from the last Path A run.
-4. If something changed, use `mcp__Slack__slack_send_message` with
-   `channel_id=C0173PTNZTR`, mentioning Teresa the same way as Path A.
+4. If something changed, use `mcp__Slack__slack_send_message` with the
+   channel and mention currently configured (see the test-target note at
+   the top of this file).
 5. Update `state/foundations-snapshot.json` by hand and commit it, so Path A
    runs later stay in sync.
 
-## Tagging Teresa
+## Tagging the right person
 
-Confirmed via `mcp__Slack__slack_list_channel_members` on `#sed-design`
-(`slack_search_users` does **not** reliably surface her by name or email --
-don't rely on it): Teresa is a member as `@teresa.romero.globant`
-("Teresa Romero García"), user ID `U015EH28ZMG`. That ID is
-`check_foundations.py`'s default for `TERESA_SLACK_ID`, producing a real
-`<@U015EH28ZMG>` mention. When posting by hand via the Slack MCP tool
-(Path A's routine prompt, or Path B), use `<@U015EH28ZMG>` the same way.
+Both the test target and the real target were confirmed the same way:
+`mcp__Slack__slack_list_channel_members` on the target channel.
+`slack_search_users` does **not** reliably surface people by name or
+email -- don't rely on it, use the channel member list instead.
+
+- Test: `@l.paccagnini.fl` ("Lorenzo Paccagnini"), user ID `U09HH14A076`,
+  member of `#testchannel` (`C0BNJEN2W57`).
+- Real (once switched over): `@teresa.romero.globant` ("Teresa Romero
+  García"), user ID `U015EH28ZMG`, member of `#sed-design` (`C0173PTNZTR`).
+
+`check_foundations.py` defaults `SLACK_CHANNEL_ID`/`MENTION_SLACK_ID` to the
+test values above. When posting by hand via the Slack MCP tool, mention
+whichever ID matches the channel you're actually posting to.
 
 ## Reporting results
 
-Always say plainly whether a Slack message was actually sent, and whether
-it actually mentioned Teresa with a real `<@ID>` or just wrote inert text --
-don't imply a ping happened if it didn't.
+Always say plainly whether a Slack message was actually sent, whether it's
+going to the test channel or the real one, and whether it actually
+mentioned someone with a real `<@ID>` or just wrote inert text -- don't
+imply a ping happened if it didn't.
