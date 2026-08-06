@@ -35,7 +35,9 @@ import urllib.error
 FIGMA_FILE_KEY = os.environ.get("FIGMA_FILE_KEY", "4EZqcDA8pAD4CVfPR9f9Gh")
 FIGMA_NODE_ID = os.environ.get("FIGMA_NODE_ID", "5:54")
 SLACK_CHANNEL_ID = os.environ.get("SLACK_CHANNEL_ID", "C0173PTNZTR")
-TERESA_SLACK_ID = os.environ.get("TERESA_SLACK_ID", "").strip()
+# @teresa.romero.globant / "Teresa Romero García" -- confirmed member of
+# #sed-design. Override with the TERESA_SLACK_ID env var if this ever changes.
+TERESA_SLACK_ID = os.environ.get("TERESA_SLACK_ID", "U015EH28ZMG").strip()
 TERESA_FALLBACK_MENTION = "teresa.romero@globant.com"
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

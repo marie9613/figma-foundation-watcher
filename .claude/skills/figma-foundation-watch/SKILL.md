@@ -46,16 +46,15 @@ After each run where a diff was found, commit and push the updated
 still `git push` from the calling context) so the next run diffs against
 the latest state instead of re-detecting the same change.
 
-### Known gap: tagging Teresa
+### Tagging Teresa
 
-`teresa.romero@globant.com` is **not currently a member of the
-`humbleteam-llc` Slack workspace** (checked via `slack_search_users` -- no
-match). Until she's invited (as a member or a Slack Connect guest) and has
-a real user ID, the script can't produce a true `<@ID>` mention -- it falls
-back to writing her email as plain text, which will not ping her. If
-`TERESA_SLACK_ID` is set as an env var, the script uses it for a real
-mention. Look her ID up with `slack_search_users` once she's in the
-workspace and set that env var (or hardcode it here once known).
+Confirmed via `slack_list_channel_members` on `#sed-design`: Teresa is a
+member as `@teresa.romero.globant` ("Teresa Romero García"), user ID
+`U015EH28ZMG`. That ID is the script's default for `TERESA_SLACK_ID`, so it
+produces a real `<@U015EH28ZMG>` mention out of the box. Override the env
+var only if her account ever changes. (Note: `slack_search_users` doesn't
+reliably surface her by name or email -- use `slack_list_channel_members` on
+the target channel instead if you ever need to re-verify.)
 
 ## Path B: interactive check (no tokens needed, but requires a live session)
 
