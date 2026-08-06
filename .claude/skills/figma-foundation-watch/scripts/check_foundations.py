@@ -147,9 +147,11 @@ def build_slack_message(added, removed, modified):
 
 
 def post_to_slack(text):
+    """Posts directly via the Slack REST API. Only used when SLACK_BOT_TOKEN is
+    set (standalone/headless runs). When called from a Claude Code session
+    that already has the Slack MCP connector, skip this and have Claude post
+    with mcp__Slack__slack_send_message instead -- see main()'s else branch."""
     token = os.environ.get("SLACK_BOT_TOKEN")
-    if not token:
-        die("SLACK_BOT_TOKEN is not set. See SKILL.md for how to create/install a Slack bot.")
     body = json.dumps({"channel": SLACK_CHANNEL_ID, "text": text}).encode()
     req = urllib.request.Request(
         "https://slack.com/api/chat.postMessage",
@@ -189,12 +191,24 @@ def main():
         return
 
     message = build_slack_message(added, removed, modified)
-    post_to_slack(message)
     save_snapshot(new_snapshot)
-    print(
-        f"Foundation change detected and posted to Slack: "
-        f"{len(added)} added, {len(removed)} removed, {len(modified)} modified."
-    )
+
+    if os.environ.get("SLACK_BOT_TOKEN"):
+        post_to_slack(message)
+        print(
+            f"Foundation change detected and posted to Slack directly: "
+            f"{len(added)} added, {len(removed)} removed, {len(modified)} modified."
+        )
+    else:
+        # No SLACK_BOT_TOKEN configured: don't post ourselves. Print the
+        # message so a caller with the Slack MCP connector (e.g. a Claude
+        # Code routine) can post it via mcp__Slack__slack_send_message to
+        # channel C0173PTNZTR instead of over the network-restricted REST API.
+        print("FOUNDATION_CHANGE_DETECTED: post the following message to Slack channel "
+              f"{SLACK_CHANNEL_ID} (no SLACK_BOT_TOKEN set, so it was not sent automatically):")
+        print("---")
+        print(message)
+        print("---")
 
 
 if __name__ == "__main__":
